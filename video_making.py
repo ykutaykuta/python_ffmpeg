@@ -1,6 +1,7 @@
 import shutil
 import subprocess
 from pathlib import Path
+from download import *
 
 OUTPUT_WIDTH = 1920
 OUTPUT_HEIGHT = 1080
@@ -42,21 +43,24 @@ def main():
     tmp_dir = curr_dir.joinpath("tmp")
     if not tmp_dir.exists():
         tmp_dir.mkdir(parents=True, exist_ok=True)
+    video_dir = curr_dir.joinpath("videos")
+    if not video_dir.exists():
+        video_dir.mkdir(parents=True, exist_ok=True)
 
+    url_list = curr_dir.joinpath("lists.txt")
     lists = tmp_dir.joinpath("lists.txt")
     transition_video = curr_dir.joinpath("transition.mp4")
     intro_video = curr_dir.joinpath("intro.mp4")
     outro_video = curr_dir.joinpath("outro.mp4")
     replaced_audio = curr_dir.joinpath("audio.mp3")
     photo = curr_dir.joinpath("logo.png")
-    video_dir = curr_dir.joinpath("videos")
-
     final_video = curr_dir.joinpath("final.mp4")
 
-    files = []
-    for file in video_dir.glob("**/*"):
-        if file.is_file() and file.suffix.lower() == ".mp4":
-            files.append(file)
+    files = yt_download_from_list_file(str(url_list), str(video_dir))
+    # files = []
+    # for file in video_dir.glob("**/*"):
+    #     if file.is_file() and file.suffix.lower() == ".mp4":
+    #         files.append(file)
     if len(files) == 0:
         exit(0)
 
