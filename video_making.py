@@ -22,7 +22,7 @@ ffprobe = 'ffprobe -v error -show_entries format=duration -of default=noprint_wr
 
 def get_length(filename: str) -> float:
     cmd = ffprobe.format(filename)
-    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True, shell=True)
     duration = float(result.stdout)
     print(f"video {filename} with duration {duration}s")
     return duration
