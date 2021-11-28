@@ -1,6 +1,7 @@
 import shutil
 import subprocess
 from pathlib import Path
+
 from download import *
 
 OUTPUT_WIDTH = 1920
@@ -10,9 +11,13 @@ TIME_SPLIT = "00:00:30"
 REPLACE_AUDIO = False
 ADD_PHOTO = True
 ADD_INTRO_OUTRO = True
+USE_URL_VIDEO = True
+USE_LOCAL_VIDEO = True
+LOCAL_VIDEO_FIRST = False
 
 ff_add_slient_audio = 'ffmpeg -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "{}" -c:v h264 -c:a aac -shortest "{}" -y'
-ff_transcode = 'ffmpeg {} -i "{}" -map 0:v:0 -map 0:a:0 -r 30 -g 60 -s {}x{} -ar 44100 -c:v h264 -c:a aac "{}" -y'
+ff_transcode = 'ffmpeg {0} -i "{1}" -map 0:v:0 -map 0:a:0 -r 30 -g 60 -ar 44100 -vf "scale={2}:{3}:force_original_aspect_ratio=decrease,' \
+               'pad={2}:{3}:(ow-iw)/2:(oh-ih)/2" -c:v h264 -c:a aac "{4}" -y '
 ff_concat = 'ffmpeg -f concat -safe 0 -i "{}" -c copy "{}" -y'
 ff_split = 'ffmpeg -i "{}" -c copy -map 0 -segment_time {} -f segment -reset_timestamps 1 tmp/segment%03d.mp4 -y'
 ff_add_audio = 'ffmpeg -i "{}" -stream_loop -1 -i "{}" -shortest -map 0:v -map 1:a -ar 44100 -c:v copy -c:a aac "{}" -y'
@@ -46,8 +51,11 @@ def main():
     video_dir = curr_dir.joinpath("videos")
     if not video_dir.exists():
         video_dir.mkdir(parents=True, exist_ok=True)
+    download_videos_dir = curr_dir.joinpath("download_videos")
+    if not download_videos_dir.exists():
+        download_videos_dir.mkdir(parents=True, exist_ok=True)
 
-    url_list = curr_dir.joinpath("lists.txt")
+    url_list = curr_dir.joinpath("video_urls.txt")
     lists = tmp_dir.joinpath("lists.txt")
     transition_video = curr_dir.joinpath("transition.mp4")
     intro_video = curr_dir.joinpath("intro.mp4")
@@ -56,11 +64,20 @@ def main():
     photo = curr_dir.joinpath("logo.png")
     final_video = curr_dir.joinpath("final.mp4")
 
-    files = yt_download_from_list_file(str(url_list), str(video_dir))
-    # files = []
-    # for file in video_dir.glob("**/*"):
-    #     if file.is_file() and file.suffix.lower() == ".mp4":
-    #         files.append(file)
+    downloaded_videos = []
+    if USE_URL_VIDEO:
+        downloaded_videos = yt_download_from_list_file(str(url_list), str(download_videos_dir))
+
+    local_videos = []
+    if USE_LOCAL_VIDEO:
+        for file in video_dir.glob("**/*"):
+            if file.is_file() and file.suffix.lower() == ".mp4":
+                local_videos.append(file)
+
+    if LOCAL_VIDEO_FIRST:
+        files = local_videos + downloaded_videos
+    else:
+        files = downloaded_videos + local_videos
     if len(files) == 0:
         exit(0)
 
@@ -69,7 +86,7 @@ def main():
     with open(str(lists), "w") as f:
         for file in files:
             duration = get_length(str(file))
-            duration = f"-t {duration-5}"
+            duration = f"-t {duration - 5}"
             new_file = tmp_dir.joinpath(f"{idx}.mp4")
             cmd = ff_transcode.format(duration, str(file), OUTPUT_WIDTH, OUTPUT_HEIGHT, str(new_file))
             do_command(cmd)
