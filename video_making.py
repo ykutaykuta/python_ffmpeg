@@ -1,8 +1,15 @@
+import enum
 import shutil
 import subprocess
-from pathlib import Path
 
 from download import *
+
+
+class Position(enum.Enum):
+    head = 1
+    middle = 2
+    tail = 3
+
 
 OUTPUT_WIDTH = 1920
 OUTPUT_HEIGHT = 1080
@@ -15,11 +22,16 @@ USE_URL_VIDEO = True
 USE_LOCAL_VIDEO = True
 LOCAL_VIDEO_FIRST = False
 
+# long video config
+USE_LONG_VIDEO = True
+LONG_VIDEO_TIME_SPLIT = "00:01:00"
+LONG_VIDEO_POSITION = Position.tail
+
 ff_add_slient_audio = 'ffmpeg -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "{}" -c:v h264 -c:a aac -shortest "{}" -y'
 ff_transcode = 'ffmpeg {0} -i "{1}" -map 0:v:0 -map 0:a:0 -r 30 -g 60 -ar 44100 -vf "scale={2}:{3}:force_original_aspect_ratio=decrease,' \
                'pad={2}:{3}:(ow-iw)/2:(oh-ih)/2" -c:v h264 -c:a aac "{4}" -y '
 ff_concat = 'ffmpeg -f concat -safe 0 -i "{}" -c copy "{}" -y'
-ff_split = 'ffmpeg -i "{}" -c copy -map 0 -segment_time {} -f segment -reset_timestamps 1 tmp/segment%03d.mp4 -y'
+ff_split = 'ffmpeg -i "{}" -c copy -map 0 -segment_time {} -f segment -reset_timestamps 1 "{}" -y'
 ff_add_audio = 'ffmpeg -i "{}" -stream_loop -1 -i "{}" -shortest -map 0:v -map 1:a -ar 44100 -c:v copy -c:a aac "{}" -y'
 ff_photo = 'ffmpeg -i "{}" -i "{}" -filter_complex "overlay=10:10" "{}" -y'
 ffprobe = 'ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{}"'
@@ -54,8 +66,12 @@ def main():
     download_videos_dir = curr_dir.joinpath("download_videos")
     if not download_videos_dir.exists():
         download_videos_dir.mkdir(parents=True, exist_ok=True)
+    long_videos_dir = curr_dir.joinpath("long_videos")
+    if not long_videos_dir.exists():
+        long_videos_dir.mkdir(parents=True, exist_ok=True)
 
     url_list = curr_dir.joinpath("video_urls.txt")
+    long_video_url_list = curr_dir.joinpath("long_video_urls.txt")
     lists = tmp_dir.joinpath("lists.txt")
     transition_video = curr_dir.joinpath("transition.mp4")
     intro_video = curr_dir.joinpath("intro.mp4")
@@ -68,16 +84,40 @@ def main():
     if USE_URL_VIDEO:
         downloaded_videos = yt_download_from_list_file(str(url_list), str(download_videos_dir))
 
+    long_video_segments = []
+    if USE_LONG_VIDEO:
+        long_videos = yt_download_from_list_file(str(long_video_url_list), str(long_videos_dir))
+        segments_dir = long_videos_dir.joinpath("segments")
+        if not segments_dir.exists():
+            segments_dir.mkdir(parents=True, exist_ok=True)
+        for video in long_videos:
+            cmd = ff_split.format(str(video), LONG_VIDEO_TIME_SPLIT,
+                                  long_videos_dir.name + "/" + segments_dir.name + "/" + video.stem + "_segment%03d.mp4")
+            do_command(cmd)
+        for file in segments_dir.glob("**/*"):
+            if file.is_file() and file.suffix.lower() == ".mp4":
+                long_video_segments.append(file)
+
     local_videos = []
     if USE_LOCAL_VIDEO:
         for file in video_dir.glob("**/*"):
             if file.is_file() and file.suffix.lower() == ".mp4":
                 local_videos.append(file)
 
-    if LOCAL_VIDEO_FIRST:
-        files = local_videos + downloaded_videos
+    head = []
+    middle = []
+    tail = []
+    if LONG_VIDEO_POSITION == Position.head:
+        head = long_video_segments
+    elif LONG_VIDEO_POSITION == Position.middle:
+        middle = long_video_segments
     else:
-        files = downloaded_videos + local_videos
+        tail = long_video_segments
+
+    if LOCAL_VIDEO_FIRST:
+        files = head + local_videos + middle + downloaded_videos + tail
+    else:
+        files = head + downloaded_videos + middle + local_videos + tail
     if len(files) == 0:
         exit(0)
 
@@ -103,7 +143,7 @@ def main():
             file.unlink()
 
     # split
-    cmd = ff_split.format(str(final_video), TIME_SPLIT)
+    cmd = ff_split.format(str(final_video), TIME_SPLIT, "tmp/segment%03d.mp4")
     do_command(cmd)
 
     # transcode transition and concat transition
