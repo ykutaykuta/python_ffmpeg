@@ -13,9 +13,9 @@ ADD_PHOTO = True
 ADD_INTRO_OUTRO = True
 USE_URL_VIDEO = True
 USE_LOCAL_VIDEO = True
-LOCAL_VIDEO_FIRST = False
+LOCAL_VIDEO_BEFORE_YT_VIDEO = False
 
-ff_add_slient_audio = 'ffmpeg -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "{}" -c:v h264 -c:a aac -shortest "{}" -y'
+ff_add_silent_audio = 'ffmpeg -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -i "{}" -c:v h264 -c:a aac -shortest "{}" -y'
 ff_transcode = 'ffmpeg {0} -i "{1}" -map 0:v:0 -map 0:a:0 -r 30 -g 60 -ar 44100 -vf "scale={2}:{3}:force_original_aspect_ratio=decrease,' \
                'pad={2}:{3}:(ow-iw)/2:(oh-ih)/2" -c:v h264 -c:a aac "{4}" -y '
 ff_concat = 'ffmpeg -f concat -safe 0 -i "{}" -c copy "{}" -y'
@@ -43,38 +43,40 @@ def do_command(cmd: str):
             break
 
 
+def check_and_create_folder(folder: Path):
+    if not folder.exists():
+        folder.mkdir(parents=True, exist_ok=True)
+
+
 def main():
     curr_dir = Path.cwd().absolute()
     tmp_dir = curr_dir.joinpath("tmp")
-    if not tmp_dir.exists():
-        tmp_dir.mkdir(parents=True, exist_ok=True)
-    video_dir = curr_dir.joinpath("videos")
-    if not video_dir.exists():
-        video_dir.mkdir(parents=True, exist_ok=True)
-    download_videos_dir = curr_dir.joinpath("download_videos")
-    if not download_videos_dir.exists():
-        download_videos_dir.mkdir(parents=True, exist_ok=True)
+    check_and_create_folder(tmp_dir)
+    local_videos_dir = curr_dir.joinpath("local_videos")
+    check_and_create_folder(local_videos_dir)
+    yt_videos_dir = curr_dir.joinpath("yt_videos_dir")
+    check_and_create_folder(yt_videos_dir)
 
-    url_list = curr_dir.joinpath("video_urls.txt")
-    lists = tmp_dir.joinpath("lists.txt")
     transition_video = curr_dir.joinpath("transition.mp4")
     intro_video = curr_dir.joinpath("intro.mp4")
     outro_video = curr_dir.joinpath("outro.mp4")
+    yt_video_urls = curr_dir.joinpath("yt_video_urls.txt")
+    lists = tmp_dir.joinpath("lists.txt")
     replaced_audio = curr_dir.joinpath("audio.mp3")
     photo = curr_dir.joinpath("logo.png")
     final_video = curr_dir.joinpath("final.mp4")
 
     downloaded_videos = []
     if USE_URL_VIDEO:
-        downloaded_videos = yt_download_from_list_file(str(url_list), str(download_videos_dir))
+        downloaded_videos = yt_download_from_list_file(str(yt_video_urls), str(yt_videos_dir))
 
     local_videos = []
     if USE_LOCAL_VIDEO:
-        for file in video_dir.glob("**/*"):
+        for file in local_videos_dir.glob("**/*"):
             if file.is_file() and file.suffix.lower() == ".mp4":
                 local_videos.append(file)
 
-    if LOCAL_VIDEO_FIRST:
+    if LOCAL_VIDEO_BEFORE_YT_VIDEO:
         files = local_videos + downloaded_videos
     else:
         files = downloaded_videos + local_videos
@@ -154,11 +156,11 @@ def main():
     # normalize intro and outro
     if ADD_INTRO_OUTRO:
         new_file = tmp_dir.joinpath("intro.mp4")
-        cmd = ff_add_slient_audio.format(str(intro_video), str(new_file))
+        cmd = ff_add_silent_audio.format(str(intro_video), str(new_file))
         do_command(cmd)
         intro_video = new_file
         new_file = tmp_dir.joinpath("outro.mp4")
-        cmd = ff_add_slient_audio.format(str(outro_video), str(new_file))
+        cmd = ff_add_silent_audio.format(str(outro_video), str(new_file))
         do_command(cmd)
         outro_video = new_file
 
