@@ -33,7 +33,7 @@ ff_transcode = 'ffmpeg {0} -i "{1}" -map 0:v:0 -map 0:a:0 -r 30 -g 60 -ar 44100 
 ff_concat = 'ffmpeg -f concat -safe 0 -i "{}" -c copy "{}" -y'
 ff_split = 'ffmpeg -i "{}" -c copy -map 0 -segment_time {} -f segment -reset_timestamps 1 "{}" -y'
 ff_add_audio = 'ffmpeg -i "{}" -stream_loop -1 -i "{}" -shortest -map 0:v -map 1:a -ar 44100 -c:v copy -c:a aac "{}" -y'
-ff_photo = 'ffmpeg -i "{}" -i "{}" -filter_complex "overlay=10:10" "{}" -y'
+ff_add_photo = 'ffmpeg -i "{}" -i "{}" -filter_complex "overlay=10:10" "{}" -y'
 ffprobe = 'ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "{}"'
 
 
@@ -77,11 +77,13 @@ def main():
     yt_videos_dir = curr_dir.joinpath("yt_videos")
     yt_long_videos_dir = curr_dir.joinpath("yt_long_videos")
     final_dir = curr_dir.joinpath("final")
+    tmp_segment_dir = tmp_dir.joinpath("segment")
 
     check_and_create_folder(tmp_dir)
     check_and_create_folder(local_videos_dir)
     check_and_create_folder(yt_videos_dir)
     check_and_create_folder(final_dir)
+    check_and_create_folder(tmp_segment_dir)
 
     transition_video = curr_dir.joinpath("transition.mp4")
     intro_video = curr_dir.joinpath("intro.mp4")
@@ -90,25 +92,43 @@ def main():
     photo = curr_dir.joinpath("logo.png")
     yt_video_urls = curr_dir.joinpath("yt_video_urls.txt")
     yt_long_video_urls = curr_dir.joinpath("yt_long_video_urls.txt")
-    video_list = tmp_dir.joinpath("video_list.txt")
+    video_list_txt = tmp_dir.joinpath("video_list.txt")
+
+    # transcode intro, outro, transition video
+    new_file = tmp_dir.joinpath("transition.mp4")
+    cmd = ff_transcode.format(" ", str(transition_video), OUTPUT_WIDTH, OUTPUT_HEIGHT, str(new_file))
+    do_command(cmd)
+    transition_video = new_file
+    new_file = tmp_dir.joinpath("intro.mp4")
+    cmd = ff_add_silent_audio.format(str(intro_video), str(new_file))
+    do_command(cmd)
+    intro_video = new_file
+    new_file = tmp_dir.joinpath("outro.mp4")
+    cmd = ff_add_silent_audio.format(str(outro_video), str(new_file))
+    do_command(cmd)
+    outro_video = new_file
 
     yt_videos = []
     if USE_URL_VIDEO:
         videos = yt_download_from_list_file(str(yt_video_urls), str(yt_videos_dir))
         for video in videos:
-            new_file = tmp_dir.joinpath(video.name)
+            new_file = video.with_name("tmp.mp4")
             transcode(video, new_file, 5)
-            yt_videos.append(new_file)
+            video.unlink()
+            new_file.rename(video)
+            yt_videos.append(video)
 
     yt_long_video_segments = []
     if USE_LONG_VIDEO:
+        segments_dir = yt_long_videos_dir.joinpath("segments")
+        check_and_create_folder(segments_dir)
         videos = yt_download_from_list_file(str(yt_long_video_urls), str(yt_long_videos_dir))
         for video in videos:
-            new_file = tmp_dir.joinpath(video.name)
+            new_file = video.with_name("tmp.mp4")
             transcode(video, new_file)
-            segments_dir = yt_long_videos_dir.joinpath("segments")
-            check_and_create_folder(segments_dir)
-            cmd = ff_split.format(str(new_file), LONG_VIDEO_TIME_SPLIT,
+            video.unlink()
+            new_file.rename(video)
+            cmd = ff_split.format(str(video), LONG_VIDEO_TIME_SPLIT,
                                   yt_long_videos_dir.name + "/" + segments_dir.name + "/" + new_file.stem + "_segment%03d.mp4")
             do_command(cmd)
         for file in segments_dir.glob("**/*"):
@@ -123,110 +143,100 @@ def main():
                 transcode(file, new_file, 5)
                 local_videos.append(new_file)
 
-    for segment in yt_long_video_segments:
-        final_video = final_dir.joinpath("final_" + )
-        head = []
-        middle = []
-        tail = []
-        if LONG_VIDEO_POSITION == Position.head:
-            head = [segment]
-        elif LONG_VIDEO_POSITION == Position.middle:
-            middle = [segment]
-        else:
-            tail = [segment]
-
+    videos_list = []
+    if len(yt_long_video_segments) == 0:
         if LOCAL_VIDEO_BEFORE_YT_VIDEO:
-            videos = head + local_videos + middle + yt_videos + tail
+            videos = local_videos + yt_videos
         else:
-            videos = head + yt_videos + middle + local_videos + tail
-        if len(videos) == 0:
-            exit(0)
+            videos = yt_videos + local_videos
+        videos_list.append(videos)
+    else:
+        for segment in yt_long_video_segments:
+            head, middle, tail = [], [], []
+            if LONG_VIDEO_POSITION == Position.head:
+                head = [segment]
+            elif LONG_VIDEO_POSITION == Position.middle:
+                middle = [segment]
+            else:
+                tail = [segment]
+            if LOCAL_VIDEO_BEFORE_YT_VIDEO:
+                videos = head + local_videos + middle + yt_videos + tail
+            else:
+                videos = head + yt_videos + middle + local_videos + tail
+            videos_list.append(videos)
 
-        with open(str(video_list), "w") as f:
+    for idx, videos in enumerate(videos_list):
+        final_video = final_dir.joinpath("final_" + str(idx) + ".mp4")
+        with open(str(video_list_txt), "w") as f:
             for video in videos:
                 f.write(f"file '{str(video)}'\n")
 
-    # assemble
-    cmd = ff_concat.format(str(video_list), str(final_video))
-    do_command(cmd)
-
-    # clear tmp directory
-    for file in tmp_dir.glob("**/*"):
-        if file.is_file():
-            file.unlink()
-
-    # split
-    cmd = ff_split.format(str(final_video), TIME_SPLIT, "tmp/segment%03d.mp4")
-    do_command(cmd)
-
-    # transcode transition and concat transition
-    files = []
-    for file in tmp_dir.glob("**/*"):
-        if file.is_file() and file.suffix.lower() == ".mp4":
-            files.append(file)
-    new_file = tmp_dir.joinpath("transition.mp4")
-    cmd = ff_transcode.format(" ", str(transition_video), OUTPUT_WIDTH, OUTPUT_HEIGHT, str(new_file))
-    do_command(cmd)
-    transition_video = new_file
-    idx = 0
-    tmp = []
-    for file in files:
-        new_file = tmp_dir.joinpath(f"{idx}.mp4")
-        with open(str(video_list), "w") as f:
-            f.write(f"file '{str(file)}'\n")
-            f.write(f"file '{str(transition_video)}'\n")
-        cmd = ff_concat.format(str(video_list), str(new_file))
+        # assemble
+        cmd = ff_concat.format(str(video_list_txt), str(final_video))
         do_command(cmd)
-        tmp.append(new_file)
-        idx += 1
-    files = tmp
 
-    # concat to full video
-    with open(str(video_list), "w") as f:
+        # clear tmp/segment directory
+        for file in tmp_segment_dir.glob("**/*"):
+            if file.is_file():
+                file.unlink()
+
+        # split
+        cmd = ff_split.format(str(final_video), TIME_SPLIT, tmp_dir.name + "/" + tmp_segment_dir.name + "/segment%03d.mp4")
+        do_command(cmd)
+
+        files = []
+        for file in tmp_segment_dir.glob("**/*"):
+            if file.is_file() and file.suffix.lower() == ".mp4":
+                files.append(file)
+
+        number = 0
+        tmp_list = []
         for file in files:
-            f.write(f"file '{str(file)}'\n")
-    cmd = ff_concat.format(str(video_list), str(final_video))
-    do_command(cmd)
+            new_file = tmp_segment_dir.joinpath(f"{number}.mp4")
+            with open(str(video_list_txt), "w") as f:
+                f.write(f"file '{str(file)}'\n")
+                f.write(f"file '{str(transition_video)}'\n")
+            cmd = ff_concat.format(str(video_list_txt), str(new_file))
+            do_command(cmd)
+            tmp_list.append(new_file)
+            number += 1
+        files = tmp_list
 
-    # add photo
-    if ADD_PHOTO:
-        new_file = final_video.with_name("tmp.mp4")
-        cmd = ff_photo.format(str(final_video), str(photo), str(new_file))
+        # concat to full video
+        with open(str(video_list_txt), "w") as f:
+            for file in files:
+                f.write(f"file '{str(file)}'\n")
+        cmd = ff_concat.format(str(video_list_txt), str(final_video))
         do_command(cmd)
-        final_video.unlink()
-        new_file.rename(final_video)
 
-    # add custom audio
-    if REPLACE_AUDIO:
-        new_file = final_video.with_name("tmp.mp4")
-        cmd = ff_add_audio.format(str(final_video), str(replaced_audio), str(new_file))
-        do_command(cmd)
-        final_video.unlink()
-        new_file.rename(final_video)
+        # add photo
+        if ADD_PHOTO:
+            new_file = final_video.with_name("tmp.mp4")
+            cmd = ff_add_photo.format(str(final_video), str(photo), str(new_file))
+            do_command(cmd)
+            final_video.unlink()
+            new_file.rename(final_video)
 
-    # normalize intro and outro
-    if ADD_INTRO_OUTRO:
-        new_file = tmp_dir.joinpath("intro.mp4")
-        cmd = ff_add_silent_audio.format(str(intro_video), str(new_file))
-        do_command(cmd)
-        intro_video = new_file
-        new_file = tmp_dir.joinpath("outro.mp4")
-        cmd = ff_add_silent_audio.format(str(outro_video), str(new_file))
-        do_command(cmd)
-        outro_video = new_file
+        # add custom audio
+        if REPLACE_AUDIO:
+            new_file = final_video.with_name("tmp.mp4")
+            cmd = ff_add_audio.format(str(final_video), str(replaced_audio), str(new_file))
+            do_command(cmd)
+            final_video.unlink()
+            new_file.rename(final_video)
 
-        with open(str(video_list), "w") as f:
-            f.write(f"file '{str(intro_video)}'\n")
-            f.write(f"file '{str(final_video)}'\n")
-            f.write(f"file '{str(outro_video)}'\n")
-        new_file = final_video.with_name("tmp.mp4")
-        cmd = ff_concat.format(str(video_list), str(new_file))
-        do_command(cmd)
-        final_video.unlink()
-        new_file.rename(final_video)
+        # normalize intro and outro
+        if ADD_INTRO_OUTRO:
+            with open(str(video_list_txt), "w") as f:
+                f.write(f"file '{str(intro_video)}'\n")
+                f.write(f"file '{str(final_video)}'\n")
+                f.write(f"file '{str(outro_video)}'\n")
+            new_file = final_video.with_name("tmp.mp4")
+            cmd = ff_concat.format(str(video_list_txt), str(new_file))
+            do_command(cmd)
+            final_video.unlink()
+            new_file.rename(final_video)
 
-    # clear
-    video_list.unlink()
     shutil.rmtree(tmp_dir)
 
 

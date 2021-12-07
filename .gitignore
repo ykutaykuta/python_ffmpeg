@@ -142,4 +142,14 @@ videos/
 .idea/
 tmp/
 .DS_Store
-final.mp4
+final/
+yt_long_videos/
+yt_videos/
+
+yt_long_video_urls.txt
+yt_video_urls.txt
+transition.mp4
+outro.mp4
+intro.mp4
+audio.mp3
+logo.png
