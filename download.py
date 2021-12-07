@@ -10,7 +10,7 @@ def yt_download(url: str, name: str, path=None) -> Path:
     return Path(yt)
 
 
-def yt_download_from_list_file(list_file: str, save_folder: str) -> List:
+def yt_download_from_list_file(list_file: str, save_folder: str) -> List[Path]:
     files = []
     with open(list_file, "r") as f:
         for i, line in enumerate(f):
