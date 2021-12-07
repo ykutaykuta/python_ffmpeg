@@ -17,13 +17,3 @@ def yt_download_from_list_file(list_file: str, save_folder: str) -> List[Path]:
             file = yt_download(line, f"{i}.mp4", save_folder)
             files.append(file)
     return files
-
-
-if __name__ == "__main__":
-    # yt_download('https://www.youtube.com/watch?v=rB0TYQBYZWY', None, "ok.mp4")
-    with open("lists.txt", "rb") as f:
-        data = f.read()
-        split = data.split(b'you') + [b'ykuta', b'ykuta2']
-        print(split[-1])
-        if 5 in [1, 5]:
-            print(True)
