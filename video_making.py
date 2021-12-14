@@ -19,11 +19,11 @@ REPLACE_AUDIO = False
 ADD_PHOTO = True
 ADD_INTRO_OUTRO = True
 USE_URL_VIDEO = True
-USE_LOCAL_VIDEO = True
+USE_LOCAL_VIDEO = False
 LOCAL_VIDEO_BEFORE_YT_VIDEO = False
 
 # long video config
-USE_LONG_VIDEO = True
+USE_LONG_VIDEO = False
 LONG_VIDEO_TIME_SPLIT = "00:01:00"
 LONG_VIDEO_POSITION = Position.tail
 
@@ -72,19 +72,25 @@ def transcode(in_file: Path, out_file: Path, sub_duration: int = 0):
 
 def main():
     curr_dir = Path.cwd().absolute()
-    tmp_dir = curr_dir.joinpath("tmp")
-    local_videos_dir = curr_dir.joinpath("local_videos")
-    yt_videos_dir = curr_dir.joinpath("yt_videos")
-    yt_long_videos_dir = curr_dir.joinpath("yt_long_videos")
-    final_dir = curr_dir.joinpath("final")
-    tmp_segment_dir = tmp_dir.joinpath("segment")
 
+    str_now = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
+    working_dir = curr_dir.joinpath(str_now)
+    check_and_create_folder(working_dir)
+
+    tmp_dir = working_dir.joinpath("tmp")
     check_and_create_folder(tmp_dir)
-    check_and_create_folder(local_videos_dir)
+    yt_videos_dir = working_dir.joinpath("yt_videos")
     check_and_create_folder(yt_videos_dir)
+    yt_long_videos_dir = working_dir.joinpath("yt_long_videos")
+    check_and_create_folder(yt_long_videos_dir)
+    final_dir = working_dir.joinpath("final")
     check_and_create_folder(final_dir)
+    tmp_segment_dir = tmp_dir.joinpath("segment")
     check_and_create_folder(tmp_segment_dir)
 
+    video_list_txt = tmp_dir.joinpath("video_list.txt")
+
+    # input resources
     transition_video = curr_dir.joinpath("transition.mp4")
     intro_video = curr_dir.joinpath("intro.mp4")
     outro_video = curr_dir.joinpath("outro.mp4")
@@ -92,7 +98,8 @@ def main():
     photo = curr_dir.joinpath("logo.png")
     yt_video_urls = curr_dir.joinpath("yt_video_urls.txt")
     yt_long_video_urls = curr_dir.joinpath("yt_long_video_urls.txt")
-    video_list_txt = tmp_dir.joinpath("video_list.txt")
+    local_videos_dir = curr_dir.joinpath("local_videos")
+    check_and_create_folder(local_videos_dir)
 
     # transcode intro, outro, transition video
     new_file = tmp_dir.joinpath("transition.mp4")
@@ -128,8 +135,7 @@ def main():
             transcode(video, new_file)
             video.unlink()
             new_file.rename(video)
-            cmd = ff_split.format(str(video), LONG_VIDEO_TIME_SPLIT,
-                                  yt_long_videos_dir.name + "/" + segments_dir.name + "/" + new_file.stem + "_segment%03d.mp4")
+            cmd = ff_split.format(str(video), LONG_VIDEO_TIME_SPLIT, str(segments_dir) + "/" + video.stem + "_segment%03d.mp4")
             do_command(cmd)
         for file in segments_dir.glob("**/*"):
             if file.is_file() and file.suffix.lower() == ".mp4":
@@ -181,7 +187,7 @@ def main():
                 file.unlink()
 
         # split
-        cmd = ff_split.format(str(final_video), TIME_SPLIT, tmp_dir.name + "/" + tmp_segment_dir.name + "/segment%03d.mp4")
+        cmd = ff_split.format(str(final_video), TIME_SPLIT, str(tmp_segment_dir) + "/segment%03d.mp4")
         do_command(cmd)
 
         files = []

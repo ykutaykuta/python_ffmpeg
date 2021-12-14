@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
@@ -17,3 +18,12 @@ def yt_download_from_list_file(list_file: str, save_folder: str) -> List[Path]:
             file = yt_download(line, f"{i}.mp4", save_folder)
             files.append(file)
     return files
+
+
+def main():
+    now = datetime.now().strftime("%d-%m-%Y_%H-%M-%S")
+    print(now, type(now))
+
+
+if __name__ == "__main__":
+    main()
